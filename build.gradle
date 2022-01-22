@@ -1,0 +1,69 @@
+buildscript {
+  repositories {
+	gradlePluginPortal()
+	jcenter()
+  }
+  dependencies {
+    classpath "net.ltgt.gradle:gradle-apt-plugin:0.13"
+    classpath "com.commercehub.gradle.plugin:gradle-avro-plugin:0.22.0"
+  }
+}
+
+plugins {
+  id 'org.springframework.boot' version '2.5.4'
+  id 'io.spring.dependency-management' version '1.0.11.RELEASE'
+  id 'java'
+  id "eclipse"
+}
+
+group = 'tn.biltounsi.kafka'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility=11
+targetCompatibility=11
+
+configurations {
+  compileOnly {
+    extendsFrom annotationProcessor
+  }
+}
+
+repositories {
+	mavenCentral()
+    maven { url "https://packages.confluent.io/maven" }
+}
+
+apply plugin: "com.commercehub.gradle.plugin.avro"
+apply plugin: "eclipse"
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.apache.kafka:kafka-streams:2.7.1'
+	implementation 'org.apache.kafka:kafka-streams-test-utils:2.7.1'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    compileOnly 'com.google.auto.value:auto-value:1.5'
+    implementation "org.apache.avro:avro:1.10.2"
+    implementation 'io.confluent:kafka-avro-serializer:5.2.1'
+    implementation 'io.confluent:kafka-streams-avro-serde:5.2.1'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+eclipse {
+    sourceSets {
+        main {
+            java {
+                srcDirs += ["build/generated-main-avro-java"]
+            }
+        }
+    }
+}
+
+defaultTasks "bootRun"
+
+springBoot {
+    mainClassName = "tn.biltounsi.kafka.biltounsi.BiltounsiApplication"
+}

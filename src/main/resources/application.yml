@@ -1,0 +1,7 @@
+server:
+  port: 5000
+
+kafka.streams:
+  host.info: localhost:5000
+  streams.state.dir: /tmp/kafka-streams/bank-balance-queries
+  schema.registry.url: http://localhost:8081

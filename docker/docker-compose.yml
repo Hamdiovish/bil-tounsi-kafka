@@ -1,0 +1,181 @@
+---
+version: '3'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:6.2.0
+    hostname: zookeeper
+    restart: "no"
+    container_name: zookeeper
+    ports:
+      - "32181:32181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 32181
+      ZOOKEEPER_TICK_TIME: 2000
+
+
+  kafka:
+    image: confluentinc/cp-kafka:6.2.0
+    hostname: kafka
+    container_name: kafka
+    restart: "no"
+    depends_on:
+      - zookeeper
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:32181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+
+
+  kafka-create-topics:
+    image: confluentinc/cp-kafka:6.2.0
+    depends_on:
+      - kafka
+    hostname: kafka-create-topics
+    command: ["bash", "./create-topics.sh"]
+    working_dir: /scripts
+    volumes:
+    - ./scripts:/scripts
+
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect-base:6.2.0
+    container_name: kafka-connect
+    ports:
+      - 8083:8083
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "kafka:9092"
+      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect"
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: kafka-connect
+      CONNECT_CONFIG_STORAGE_TOPIC: _kafka-connect-configs
+      CONNECT_OFFSET_STORAGE_TOPIC: _kafka-connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: _kafka-connect-status
+      CONNECT_KEY_CONVERTER_SCHEMA_ENABLED: "true"
+      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_LOG4J_ROOT_LOGLEVEL: "INFO"
+      CONNECT_LOG4J_LOGGERS: "org.apache.kafka.connect.runtime.rest=WARN,org.reflections=ERROR"
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+      CONNECT_PLUGIN_PATH: '/usr/share/java,/usr/share/confluent-hub-components/,/connectors/'
+    command: 
+      - bash 
+      - -c 
+      - |
+        echo "Installing connector plugins"
+        confluent-hub install jcustenborder/kafka-connect-json-schema:0.2.5
+        confluent-hub install --no-prompt mdrogalis/voluble:0.3.1
+        confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:5.5.3
+        confluent-hub install  --no-prompt confluentinc/connect-transforms:latest
+
+        # Sticking to 5.5.3 at the moment because of issue with 10.0.1 https://rmoff.net/2021/03/11/kafka-connect-sqlsyntaxerrorexception-blob/text-column-used-in-key-specification-without-a-key-length/
+        #
+        echo "Downloading JDBC driver"
+        cd /usr/share/confluent-hub-components/confluentinc-kafka-connect-jdbc
+        # Find the latest version of this https://dev.mysql.com/downloads/connector/j/
+        curl https://cdn.mysql.com/Downloads/Connector-J/mysql-connector-java-8.0.23.tar.gz | tar xz 
+        echo -e "\n\n⏳ Waiting for Schema Registry to be available before launching CONNECT\n"
+        while [ $$(curl -s -o /dev/null -w %{http_code} http://schema-registry:8081/) -eq 000 ]
+        do 
+          echo -e $$(date) "ksqlDB Server HTTP state on http://schema-registry:8081: " $$(curl -s -o /dev/null -w %{http_code} http://schema-registry:8081/) " (waiting for 200)"
+          sleep 10
+        done
+        #
+        echo "Launching Kafka Connect worker"
+        /etc/confluent/docker/run & 
+        #
+        sleep infinity
+
+
+  ksqldb:
+    image: confluentinc/ksqldb-server:0.18.0
+    container_name: ksqldb
+    ports:
+      - "8088:8088"
+    environment:
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_BOOTSTRAP_SERVERS: kafka:9092
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: "true"
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: "true"
+      KSQL_KSQL_CONNECT_URL: http://kafka-connect:8083
+      KSQL_KSQL_SERVICE_ID: ksql-biltounsi
+      KSQL_KSQL_HIDDEN_TOPICS: '^_.*'
+      KSQL_KSQL_SUPPRESS_ENABLED: "true"
+      KSQL_KSQL_QUERY_PULL_TABLE_SCAN_ENABLED: "true"
+      KSQL_KSQL_KEY_CONVERTER_SCHEMA_ENABLED: "true"
+      KSQL_KEY_CONVERTER_SCHEMA_ENABLED: "true"
+      KSQL_KSQL_SCHEMA_REGISTRY_URL: http://schema-registry:8081
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    restart: "no"
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "kafka"
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9092"
+      KAFKA_CLUSTERS_0_ZOOKEEPER: "http://zookeeper:2181"
+      KAFKA_CLUSTERS_0_READONLY: "false"
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: 'kafka-connect'
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: 'http://kafka-connect:8083'
+      KAFKA_CLUSTERS_0_KSQLDBSERVER: "http://ksqldb:8088"
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: "http://schema-registry:8081"
+
+
+  kafdrop:
+    image: obsidiandynamics/kafdrop
+    container_name: kafdrop
+    restart: "no"
+    ports:
+      - "9000:9000"
+    environment:
+      KAFKA_BROKERCONNECT: "kafka:9092"
+      JVM_OPTS: "-Xms16M -Xmx48M -Xss180K -XX:-TieredCompilation -XX:+UseStringDeduplication -noverify"
+      SCHEMAREGISTRY_CONNECT: "http://schema-registry:8081"
+
+  pg_database:
+    image: postgres:12-alpine
+    container_name: pg_database
+    environment:
+        POSTGRES_PASSWORD: "biltounsi"
+        POSTGRES_DB: "biltounsi"
+        POSTGRES_USER: "biltounsi"
+    ports:
+        - "5430:5432"
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:6.2.0
+    container_name: schema-registry
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: 'kafka:9092'
+      SCHEMA_REGISTRY_AVRO_COMPATIBILITY_LEVEL: NONE
+    healthcheck:
+          test: curl --fail localhost:8081/subjects || exit 1
+          interval: 10s
+          timeout: 10s
+          retries: 10
+
+volumes:
+    data:
+        driver: local
+        
+networks:
+  default:
+    external:
+      name: tounsi-ms-infra
