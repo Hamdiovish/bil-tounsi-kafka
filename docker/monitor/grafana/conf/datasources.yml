@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: biltounsi-pgsql
+    type: postgres
+    url: pg_database:5432
+    database: biltounsi
+    user: biltounsi
+    password: biltounsi
+    isDefault: true
+    jsonData:
+      sslmode: "disable"
+      postgresVersion: 1200
+      tlsAuth: false
+      tlsAuthWithCACert: false
+      tlsSkipVerify: true

@@ -171,6 +171,21 @@ services:
           timeout: 10s
           retries: 10
 
+
+  grafana:
+      image: grafana/grafana:8.1.1-ubuntu
+      container_name: grafana
+      environment:
+        - 'GF_SECURITY_ADMIN_PASSWORD=biltounsi'
+        - 'GF_SECURITY_ADMIN_USER=biltounsi'
+      volumes:
+        - ./monitor/grafana/conf/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+        - ./monitor/grafana/conf/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+        - ./monitor/grafana/dashboards:/var/lib/grafana/dashboards
+      ports:
+        - "3000:3000"
+
+
 volumes:
     data:
         driver: local
@@ -178,4 +193,4 @@ volumes:
 networks:
   default:
     external:
-      name: tounsi-ms-infra
+      name: tounsi-ms-infra-2

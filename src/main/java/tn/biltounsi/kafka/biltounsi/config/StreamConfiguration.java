@@ -1,5 +1,7 @@
 package tn.biltounsi.kafka.biltounsi.config;
 
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Properties;
 
@@ -26,6 +28,7 @@ import org.springframework.context.annotation.Configuration;
 import avro.tn.biltounsi.BankTransaction;
 import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import tn.biltounsi.kafka.biltounsi.model.BankBalance;
+import tn.biltounsi.kafka.biltounsi.model.BankTransactionState;
 import tn.biltounsi.kafka.biltounsi.model.JsonSerde;
 
 @Configuration
@@ -100,9 +103,11 @@ public class StreamConfiguration {
 				.toStream();
 		bankBalancesStream.to(BANK_BALANCES, Produced.with(Serdes.Long(), bankBalanceSerde));
 
-//		bankBalancesStream.mapValues((readOnlyKey, value) -> value.getLatestTransactions().first())
-//				.filter((key, value) -> value.state == BankTransactionState.REJECTED)
-//				.to(REJECTED_TRANSACTIONS, Produced.with(Serdes.Long(), bankTransactionSerdes));
+		SimpleDateFormat dateFormatter =  new SimpleDateFormat("dd-MM-yyyy hh:mm:ss");
+		bankBalancesStream.mapValues((readOnlyKey, value) -> value.getLatestTransactions().first())
+				.filter((key, value) -> value.state == BankTransactionState.REJECTED)
+		        .mapValues(tx -> { return new avro.tn.biltounsi.BankTransaction(tx.getId(),tx.getBalanceId().intValue(),tx.getConcept(),tx.getAmount().intValue(),dateFormatter.format(tx.getTime()),tx.getState().name());})
+				.to(REJECTED_TRANSACTIONS, Produced.with(Serdes.Long(), bankTransactionSerdes));
 
 		return streamsBuilder.build();
 	}
